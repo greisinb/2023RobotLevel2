@@ -11,7 +11,13 @@ import edu.wpi.first.wpilibj.Joystick;
 import edu.wpi.first.wpilibj.PneumaticsModuleType;
 import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.DoubleSolenoid.Value;
+import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.DigitalInput;
+
+import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.networktables.NetworkTableInstance;
+
 
 import javax.swing.AbstractCellEditor;
 import javax.swing.plaf.nimbus.AbstractRegionPainter;
@@ -23,6 +29,7 @@ import com.revrobotics.CANSparkMaxLowLevel; //additional functionality for Spark
 import com.revrobotics.CANSparkMaxLowLevel.MotorType; //allows for brushless motor control
 import com.revrobotics.RelativeEncoder; //allows the NEO ecoders to be used
 import com.revrobotics.SparkMaxPIDController; //allows for motor controller PID control
+import edu.wpi.first.wpilibj.DriverStation;
 
 
 /**
@@ -90,19 +97,20 @@ private RelativeEncoder extensionEncoder;
     armPID.setIZone(0);
     armPID.setFF(0);
     //can lift at full power but limits drop power
-    armPID.setOutputRange(-1, .15);
+    armPID.setOutputRange(-.5, .15);
   }
 
 
   @Override
   public void robotPeriodic() {
-    //wrist control- number is arm position threshold
-    if(armEncoder.getPosition()<20){
-      wristSolenoid.set(Value.kForward);
-    }
-    else{
-      wristSolenoid.set(Value.kReverse);
-    }
+    //set up network table for limelight
+    NetworkTable table = NetworkTableInstance.getDefault().getTable("limelight");
+    NetworkTableEntry tx = table.getEntry("tx");
+    NetworkTableEntry ty = table.getEntry("ty");
+    NetworkTableEntry tv = table.getEntry("tv");
+    double x = tx.getDouble(0.0);
+    double y = ty.getDouble(0.0);
+    double targetAquired = tv.getDouble(0.0);
 
     //get wheel encoders
     double frontLeftVal = Frontleft.getSelectedSensorVelocity(0); /* position units per 100ms */
@@ -125,6 +133,17 @@ private RelativeEncoder extensionEncoder;
 
   @Override
   public void autonomousInit() {
+    //set limelight to vision processing mode
+    NetworkTableInstance.getDefault().getTable("limelight").getEntry("camMode").setNumber(0);
+
+    if(DriverStation.getAlliance()==Alliance.Blue){
+      //set pipeline to 7 for apriltag 7
+      NetworkTableInstance.getDefault().getTable("limelight").getEntry("pipeline").setNumber(7);
+     }
+     else{ 
+      //set pipeline to 2 for apriltag 2
+      NetworkTableInstance.getDefault().getTable("limelight").getEntry("pipeline").setNumber(2);
+    }
     armEncoder.setPosition((double) 0);
     extensionEncoder.setPosition((double)0);
   }
@@ -135,54 +154,72 @@ private RelativeEncoder extensionEncoder;
   }
 
   @Override
-  public void teleopInit() {}
+  public void teleopInit() {
+    //sets camera mode to regular camera
+    NetworkTableInstance.getDefault().getTable("limelight").getEntry("camMode").setNumber(1);
+  }
 
   @Override
   public void teleopPeriodic() {
     //driver Commands
-    if(driverStick.getRawButtonPressed(4)){
-      turnRate=.5;
+    if(driverStick.getRawButton(4)){
+      turnRate=-.2;
     }
-    else if(driverStick.getRawButtonPressed(5)){
-      turnRate=-.5;
+    else if(driverStick.getRawButton(5)){
+      turnRate=.2;
     }
     else{turnRate=0;
     }
     robotDrive.driveCartesian(driverStick.getY(), -driverStick.getX(), -turnRate);
-    if(driverStick.getRawButtonPressed(1)){
+    if(driverStick.getRawButtonPressed(6)){
       brakeSolenoid.set(Value.kForward);
     }
-    if(driverStick.getRawButtonReleased(1)){
+    if(driverStick.getRawButtonReleased(6)){
       brakeSolenoid.set(Value.kReverse);
     }
     
 
 //operator commands
-//set high goal
+//player station
 if(operatorStick.getRawButton(1)){
+  wristSolenoid.set(Value.kReverse);
+  gripSolenoid.set(Value.kReverse);
   armPID.setReference(-75,CANSparkMax.ControlType.kPosition);
-  extensionPID.setReference(-295, CANSparkMax.ControlType.kPosition);
+  extensionPID.setReference(-20, CANSparkMax.ControlType.kPosition);
+}
+//high goal
+if(operatorStick.getRawButton(5)){
+  wristSolenoid.set(Value.kForward);
+  armPID.setReference(-75,CANSparkMax.ControlType.kPosition);
+  extensionPID.setReference(-250, CANSparkMax.ControlType.kPosition);
 }
 //set medium goal
-else if(operatorStick.getRawButton(2)){
-  armPID.setReference(-52,CANSparkMax.ControlType.kPosition);
-  extensionPID.setReference(-136, CANSparkMax.ControlType.kPosition);
+if(operatorStick.getRawButton(3)){
+  wristSolenoid.set(Value.kForward);
+  armPID.setReference(-62,CANSparkMax.ControlType.kPosition);
+  extensionPID.setReference(-138, CANSparkMax.ControlType.kPosition);
 }
 //set low goal
-else if(operatorStick.getRawButton(3)){
-  armPID.setReference(-20,CANSparkMax.ControlType.kPosition);
-  extensionPID.setReference(-59, CANSparkMax.ControlType.kPosition);
+if(operatorStick.getRawButton(4)){
+  wristSolenoid.set(Value.kForward);
+  armPID.setReference(-23,CANSparkMax.ControlType.kPosition);
+  extensionPID.setReference(-154, CANSparkMax.ControlType.kPosition);
 }
-//set player station
-else if(operatorStick.getRawButton(4)){
-  armPID.setReference(0,CANSparkMax.ControlType.kPosition);
-  extensionPID.setReference(0, CANSparkMax.ControlType.kPosition);
-}
+
 //set seeking position
-else{
-  armPID.setReference(-5,CANSparkMax.ControlType.kPosition);
-  extensionPID.setReference(-5, CANSparkMax.ControlType.kPosition);
+if(operatorStick.getRawButton(2)){
+  armPID.setReference(-15,CANSparkMax.ControlType.kPosition);
+  extensionPID.setReference(-240, CANSparkMax.ControlType.kPosition);
+  wristSolenoid.set(Value.kForward);
+  gripSolenoid.set(Value.kReverse);
 }
+if(operatorStick.getRawButton(6)){
+  gripSolenoid.set(Value.kForward);
+}
+if(operatorStick.getRawButton(7)){
+  gripSolenoid.set(Value.kReverse);
+}
+
   }
 
 
@@ -200,14 +237,9 @@ else{
 
   @Override
   public void testPeriodic() {
-    while(armCalState==false){ //if the arm is not caliberated
-      armMotor.set(.1); //run the arm motor into the caliberation switch
-      if(armCalSwitch.get()==true){ //when the arm switch is pressed
-        armCalState=true; //set the arm calibiration state to true
-        armMotor.set(0); //stop the arm motor
-        armEncoder.setPosition((double) 0); //zero the encoder
-      }
-    }
+    wristSolenoid.set(Value.kForward);
+    brakeSolenoid.set(Value.kForward);
+    gripSolenoid.set(Value.kForward);
     while(extensionCalState==false){ //if the extension is not caliberated
       extensionMotor.set(.2); //run the extension motor into the caliberation switch
       if(extensionCalSwitch.get()==true){ //when the extension switch is pressed
@@ -216,6 +248,15 @@ else{
         extensionEncoder.setPosition((double) 0); //zero the encoder
       }
     }
+    while(armCalState==false){ //if the arm is not caliberated
+      armMotor.set(.1); //run the arm motor into the caliberation switch
+      if(armCalSwitch.get()==true){ //when the arm switch is pressed
+        armCalState=true; //set the arm calibiration state to true
+        armMotor.set(0); //stop the arm motor
+        armEncoder.setPosition((double) 0); //zero the encoder
+      }
+    }
+    
   }
 
   @Override
